@@ -84,8 +84,11 @@ inputs = {"messages": [HumanMessage(content=user_input)]}
 for output in app.stream(inputs):
     for key, value in output.items():
         print(f"🔹 Node '{key}' finished.")
-        # Optional: Print what the AI decided to do
-        # print(value)
+        
+        # Add this to see what the AI actually said!
+        if key == "agent":
+            msg = value["messages"][-1]
+            print(f"   AI Message: {msg.content}")
+            print(f"   Tool Calls: {msg.tool_calls}")
 
 print("\n-----------------------------------")
-print("✅ Workflow Complete. Check your folder for the referral letter!")
