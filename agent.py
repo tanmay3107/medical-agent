@@ -1,57 +1,69 @@
-# ✅ CORRECTED AGENT.PY
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, SystemMessage
-from langgraph.graph import StateGraph, END
-from langgraph.prebuilt import ToolNode
-from typing import TypedDict, Annotated, List
-import operator
+from langchain.agents import AgentExecutor, create_react_agent
+from langchain import hub
+from langchain_core.prompts import PromptTemplate
+from langchain_core.tools import tool
 from tools import check_vitals, write_referral_letter
 
-# 1. Define the Agent's "State" (Memory)
-class AgentState(TypedDict):
-    messages: Annotated[List, operator.add]
-
-# 2. Setup the Brain (Llama-3 via LM Studio)
+# 1. Setup the Brain (Llama-3 via LM Studio)
 llm = ChatOpenAI(
     base_url="http://localhost:1234/v1",
     api_key="lm-studio",
     model="medical-llama-3-8b",
-    temperature=0,  # Strict mode
+    temperature=0,
 )
 
-# 3. Bind Tools
-tools = [check_vitals, write_referral_letter]
-llm_with_tools = llm.bind_tools(tools)
+# 2. Define Tools
+@tool
+def check_vitals_tool(systolic: int, diastolic: int, heart_rate: int) -> str:
+    """Analyzes vitals. Use this FIRST. Input: systolic, diastolic, heart_rate."""
+    return check_vitals(systolic, diastolic, heart_rate)
 
-# 4. Define the Nodes
-def reasoner(state: AgentState):
-    """The Brain: Decides what to do next."""
-    messages = state['messages']
-    response = llm_with_tools.invoke(messages)
-    return {"messages": [response]}
+@tool
+def write_referral_tool(patient_name: str, diagnosis: str, recommendation: str) -> str:
+    """Writes a referral letter. Use this ONLY if risk is Critical."""
+    return write_referral_letter(patient_name, diagnosis, recommendation)
 
-def should_continue(state: AgentState):
-    """The Logic: Did the AI ask to use a tool?"""
-    last_message = state['messages'][-1]
-    
-    if last_message.tool_calls:
-        print(f"   ⚡ AI decided to use tool: {last_message.tool_calls[0]['name']}")
-        return "tools"
-    return END
+tools = [check_vitals_tool, write_referral_tool]
 
-# 5. Build the Graph
-workflow = StateGraph(AgentState)
-workflow.add_node("agent", reasoner)
-workflow.add_node("tools", ToolNode(tools))
+# 3. The "ReAct" Prompt (The Secret Sauce)
+# This forces the model to think step-by-step in a format we can parse.
+template = """
+Answer the following questions as best you can. You have access to the following tools:
 
-workflow.set_entry_point("agent")
-workflow.add_conditional_edges("agent", should_continue, {"tools": "tools", END: END})
-workflow.add_edge("tools", "agent")
-app = workflow.compile()
+{tools}
+
+Use the following format:
+
+Question: the input question you must answer
+Thought: you should always think about what to do
+Action: the action to take, should be one of [{tool_names}]
+Action Input: the input to the action
+Observation: the result of the action
+... (this Thought/Action/Observation can repeat N times)
+Thought: I now know the final answer
+Final Answer: the final answer to the original input question
+
+Begin!
+
+Question: {input}
+Thought:{agent_scratchpad}
+"""
+
+prompt = PromptTemplate.from_template(template)
+
+# 4. Build the Agent
+agent = create_react_agent(llm, tools, prompt)
+agent_executor = AgentExecutor(
+    agent=agent, 
+    tools=tools, 
+    verbose=True,      # This lets us see the "Thought Process"
+    handle_parsing_errors=True
+)
 
 # --- RUN THE SIMULATION ---
 
-print("🤖 Dr. Llama Triage Agent Online...")
+print("🤖 Dr. Llama ReAct Agent Online...")
 print("-----------------------------------")
 
 user_input = """
@@ -60,31 +72,10 @@ His Blood Pressure is 190/110 and Heart Rate is 95.
 Please analyze his vitals and if it is critical, draft a referral letter immediately.
 """
 
-# ✅ THE FIX: A System Prompt that forces behavior
-system_prompt = """
-You are an autonomous Medical Triage Agent.
-You have access to tools: 'check_vitals' and 'write_referral_letter'.
+print(f"Patient: {user_input}\n")
 
-RULES:
-1. NEVER answer a vitals question with your own knowledge. You MUST call 'check_vitals'.
-2. If 'check_vitals' returns "Critical", you MUST call 'write_referral_letter'.
-3. Do not ask for clarification. ACT immediately.
-"""
-
-inputs = {"messages": [
-    SystemMessage(content=system_prompt),
-    HumanMessage(content=user_input)
-]}
-
-# Run the graph
-for output in app.stream(inputs):
-    for key, value in output.items():
-        print(f"🔹 Node '{key}' finished.")
-        # Debug: Print what the AI actually said
-        if key == "agent":
-            msg = value["messages"][-1]
-            if not msg.tool_calls:
-                print(f"   (AI Thought: {msg.content})")
-
-print("\n-----------------------------------")
-print("✅ Workflow Complete.")
+try:
+    response = agent_executor.invoke({"input": user_input})
+    print(f"\n✅ Final Result: {response['output']}")
+except Exception as e:
+    print(f"Error: {e}")
