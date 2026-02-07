@@ -9,8 +9,9 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.tools import tool
-from langchain.agents import create_tool_calling_agent, AgentExecutor
-from langchain.prompts import ChatPromptTemplate
+from langgraph.prebuilt import create_react_agent
+from langchain_core.messages import HumanMessage
+
 
 # --- 1. SETUP & TOOLS ---
 st.set_page_config(page_title="Medical AI System", page_icon="🏥", layout="wide")
@@ -114,7 +115,7 @@ with tab1:
 # =========== TAB 2: AGENT (Clinical Triage) ============
 with tab2:
     st.header("Autonomous Clinical Triage")
-    
+
     col1, col2 = st.columns(2)
     with col1:
         p_name = st.text_input("Patient Name", "John Doe")
@@ -125,40 +126,47 @@ with tab2:
         symptoms = st.text_area("Symptoms / Notes", "Patient complains of mild chest pain.")
 
     if st.button("🚑 Run Triage Analysis"):
-        with st.spinner("Dr. Llama is analyzing vitals and tools..."):
-            # 1. Setup Agent
-            llm = ChatOpenAI(base_url="http://localhost:1234/v1", api_key="lm-studio", model="medical-llama-3-8b", temperature=0)
-            
-            # Create the prompt for the agent
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", "You are a helpful medical assistant. Use the 'check_vitals' tool to analyze numbers. If the result is 'Critical', use 'write_referral_letter'."),
-                ("placeholder", "{chat_history}"),
-                ("human", "{input}"),
-                ("placeholder", "{agent_scratchpad}"),
-            ])
+        with st.spinner("Dr. Llama is analyzing vitals..."):
+            # LLM
+            llm = ChatOpenAI(
+                base_url="http://localhost:1234/v1",
+                api_key="lm-studio",
+                model="medical-llama-3-8b",
+                temperature=0
+            )
 
-            # Construct the Agent
-            agent = create_tool_calling_agent(llm, tools, prompt)
-            agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
-            
-            # 2. Construct Query
-            user_query = f"""
+            # LangGraph Agent (REPLACEMENT for AgentExecutor)
+            agent = create_react_agent(
+                model=llm,
+                tools=tools
+            )
+
+            # User message
+            user_message = f"""
             Patient: {p_name}
-            Vitals: BP {systolic}/{diastolic}, HR {heart_rate}.
-            Symptoms: {symptoms}.
-            Analyze the vitals using the tool. If critical, write a referral letter.
+            Vitals: BP {systolic}/{diastolic}, HR {heart_rate}
+            Symptoms: {symptoms}
+
+            Analyze vitals using tools. If critical, generate a referral letter.
             """
-            
-            # 3. Run
-            result = agent_executor.invoke({"input": user_query})
-            
-            # 4. Display Result
-            st.info("📋 Agent Output:")
-            st.write(result["output"])
-            
-            # Check for file creation
-            expected_file = f"Referral_{p_name.replace(' ', '_')}.txt"
-            if os.path.exists(expected_file):
-                st.success(f"✅ CRITICAL ALERT: Referral letter generated: {expected_file}")
-                with open(expected_file, "r") as f:
-                    st.download_button("Download Referral Letter", f, file_name=expected_file)
+
+            result = agent.invoke(
+                {"messages": [HumanMessage(content=user_message)]}
+            )
+
+            final_answer = result["messages"][-1].content
+
+            st.info("📋 Agent Output")
+            st.write(final_answer)
+
+            # Check file creation
+            referral_file = f"Referral_{p_name.replace(' ', '_')}.txt"
+            if os.path.exists(referral_file):
+                st.success("🚨 CRITICAL: Referral Letter Generated")
+                with open(referral_file, "r") as f:
+                    st.download_button(
+                        "Download Referral Letter",
+                        f,
+                        file_name=referral_file
+                    )
+    
