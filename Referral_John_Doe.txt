@@ -1,0 +1,14 @@
+
+    URGENT MEDICAL REFERRAL
+    -----------------------
+    Patient: John Doe
+    Date: 2026-02-01
+    
+    Diagnosis: Hypertension
+    
+    Recommendation:
+    Referral to a specialist is recommended.
+    
+    Signed,
+    AI Triage Agent
+    
