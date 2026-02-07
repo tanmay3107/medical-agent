@@ -1,11 +1,10 @@
 from langchain_openai import ChatOpenAI
-from langchain.agents import AgentExecutor, create_react_agent
-from langchain import hub
-from langchain_core.prompts import PromptTemplate
 from langchain_core.tools import tool
+from langchain.agents import create_agent
+
 from tools import check_vitals, write_referral_letter
 
-# 1. Setup the Brain (Llama-3 via LM Studio)
+# --- LLM (LM Studio) ---
 llm = ChatOpenAI(
     base_url="http://localhost:1234/v1",
     api_key="lm-studio",
@@ -13,69 +12,39 @@ llm = ChatOpenAI(
     temperature=0,
 )
 
-# 2. Define Tools
+# --- Tools ---
 @tool
 def check_vitals_tool(systolic: int, diastolic: int, heart_rate: int) -> str:
-    """Analyzes vitals. Use this FIRST. Input: systolic, diastolic, heart_rate."""
+    """Analyze vitals and determine risk level."""
     return check_vitals(systolic, diastolic, heart_rate)
 
 @tool
 def write_referral_tool(patient_name: str, diagnosis: str, recommendation: str) -> str:
-    """Writes a referral letter. Use this ONLY if risk is Critical."""
+    """Write a referral letter if risk is critical."""
     return write_referral_letter(patient_name, diagnosis, recommendation)
 
 tools = [check_vitals_tool, write_referral_tool]
 
-# 3. The "ReAct" Prompt (The Secret Sauce)
-# This forces the model to think step-by-step in a format we can parse.
-template = """
-Answer the following questions as best you can. You have access to the following tools:
-
-{tools}
-
-Use the following format:
-
-Question: the input question you must answer
-Thought: you should always think about what to do
-Action: the action to take, should be one of [{tool_names}]
-Action Input: the input to the action
-Observation: the result of the action
-... (this Thought/Action/Observation can repeat N times)
-Thought: I now know the final answer
-Final Answer: the final answer to the original input question
-
-Begin!
-
-Question: {input}
-Thought:{agent_scratchpad}
-"""
-
-prompt = PromptTemplate.from_template(template)
-
-# 4. Build the Agent
-agent = create_react_agent(llm, tools, prompt)
-agent_executor = AgentExecutor(
-    agent=agent, 
-    tools=tools, 
-    verbose=True,      # This lets us see the "Thought Process"
-    handle_parsing_errors=True
+# --- Create Agent (NEW API) ---
+agent = create_agent(
+    model=llm,   # 🔴 THIS is what your error was about
+    tools=tools,
 )
 
-# --- RUN THE SIMULATION ---
-
-print("🤖 Dr. Llama ReAct Agent Online...")
-print("-----------------------------------")
+print("🤖 Dr. Llama Medical Agent Online")
+print("--------------------------------")
 
 user_input = """
-I have a patient named John Doe. 
-His Blood Pressure is 190/110 and Heart Rate is 95. 
-Please analyze his vitals and if it is critical, draft a referral letter immediately.
+Patient Name: John Doe
+Blood Pressure: 190/110
+Heart Rate: 95
+
+Analyze vitals and if the condition is critical, generate a referral letter.
 """
 
-print(f"Patient: {user_input}\n")
+result = agent.invoke(
+    {"messages": [("human", user_input)]}
+)
 
-try:
-    response = agent_executor.invoke({"input": user_input})
-    print(f"\n✅ Final Result: {response['output']}")
-except Exception as e:
-    print(f"Error: {e}")
+print("\n✅ Final Output:")
+print(result["messages"][-1].content)
