@@ -100,6 +100,23 @@ medical-reasoner/
 
 ---
 
+## 📊 Experimental Results (Benchmarks)
+
+We evaluated the system on an **NVIDIA RTX 3050 Ti (4GB VRAM)** using a standard medical QA dataset.
+
+| Metric | Result | Notes |
+| :--- | :--- | :--- |
+| **Average Latency** | **5.18s** | Response time per query |
+| **Throughput** | **6.64 TPS** | Tokens Generated Per Second |
+| **Peak Speed** | **9.31 TPS** | Observed on "Treatment Protocol" queries |
+| **Retrieval Time** | **<200ms** | Local Vector Search (ChromaDB) |
+
+*Data generated via `benchmark.py` on Feb 11, 2026.*
+
+---
+
+---
+
 ## 📊 Performance Metrics
 
 * **Retrieval Speed:** <200ms (Local ChromaDB)
